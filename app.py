@@ -228,7 +228,7 @@ REDDIT_USER_AGENT=script:YourBotName:v1.0
                     stats.messages += 1
                     stats.total_actions += 1
                     add_action('message', {
-                        'to': form_data.get('username'),
+                        'username': form_data.get('username'),
                         'subject': form_data.get('subject'),
                         'message': form_data.get('message')
                     }, 'success')
@@ -282,7 +282,7 @@ def add_action(action_type, data, status):
         details = f"On post: {data['post_url']}\nComment: {data['comment']}"
         url = data['post_url']
     elif action_type == 'message':
-        description = f"Sent message to u/{data['to']}"
+        description = f"Sent message to u/{data['username']}"
         details = f"Subject: {data['subject']}\nMessage: {data['message']}"
         url = ''
     elif action_type == 'monitor':
@@ -383,6 +383,8 @@ def send_message(username, subject, message):
                 raise ValueError(f"Unable to message u/{username}. They might have blocked messages or your account is too new.")
             elif "invalid_grant" in error_msg:
                 raise ValueError("Reddit authentication failed. Please check your credentials.")
+            elif "restricted_to_pm" in error_msg:
+                raise ValueError(f"Cannot send message to u/{username}. They don't accept direct messages.")
             else:
                 raise ValueError(f"Failed to send message: {str(e)}")
                 
