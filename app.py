@@ -63,211 +63,183 @@ class Stats:
         self.comments = 0
         self.messages = 0
         self.recent_actions = []
-        self.load_stats()
+        
+        # Initialize with some default values since we can't use files on Vercel
+        self.initialize_default_stats()
+        
+    def initialize_default_stats(self):
+        """Initialize with default values for serverless environment"""
+        self.total_actions = 0
+        self.posts = 0
+        self.comments = 0
+        self.messages = 0
+        self.recent_actions = []
 
     def save_stats(self):
-        # Convert datetime objects to strings for JSON serialization
-        stats_data = {
-            'total_actions': self.total_actions,
-            'posts': self.posts,
-            'comments': self.comments,
-            'messages': self.messages,
-            'recent_actions': [{
-                **action,
-                'timestamp': action['timestamp'].strftime('%Y-%m-%d %H:%M:%S') if isinstance(action['timestamp'], datetime) else action['timestamp']
-            } for action in self.recent_actions]
-        }
-        with open('stats.json', 'w') as f:
-            json.dump(stats_data, f)
+        """In serverless environment, we just keep stats in memory"""
+        # Keep only last 20 actions to prevent memory growth
+        self.recent_actions = self.recent_actions[:20]
+        # No file operations needed
 
     def load_stats(self):
-        try:
-            if os.path.exists('stats.json'):
-                with open('stats.json', 'r') as f:
-                    data = json.load(f)
-                    self.total_actions = data.get('total_actions', 0)
-                    self.posts = data.get('posts', 0)
-                    self.comments = data.get('comments', 0)
-                    self.messages = data.get('messages', 0)
-                    self.recent_actions = data.get('recent_actions', [])
-                    
-                    # Convert timestamp strings back to datetime objects
-                    for action in self.recent_actions:
-                        if isinstance(action.get('timestamp'), str):
-                            action['timestamp'] = datetime.strptime(action['timestamp'], '%Y-%m-%d %H:%M:%S')
-        except Exception as e:
-            print(f"Error loading stats: {e}")
+        """In serverless environment, stats are kept in memory"""
+        pass  # No file operations needed
 
 stats = Stats()
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    # Verify Reddit authentication on each request
-    auth_success, auth_message = verify_reddit_auth()
-    
-    # If authentication completely failed, show error page
-    if not auth_success:
-        return f"""
-        <h3>Reddit Authentication Failed</h3>
-        <p style="color: red;">{auth_message}</p>
-        <p>Please check your Reddit API credentials in the .env file.</p>
-        <p>Your current credentials:</p>
-        <ul>
-            <li>Client ID: {os.getenv('REDDIT_CLIENT_ID')[:5]}...</li>
-            <li>Username: {os.getenv('REDDIT_USERNAME')}</li>
-            <li>User Agent: {os.getenv('REDDIT_USER_AGENT')}</li>
-        </ul>
-        <p>Make sure:</p>
-        <ol>
-            <li>You've created a Reddit App at https://www.reddit.com/prefs/apps</li>
-            <li>You're using the correct client_id (the string under your app name)</li>
-            <li>You're using the correct client_secret</li>
-            <li>Your Reddit account password is correct</li>
-            <li>You're not being rate limited</li>
-        </ol>
-        <p>Need to update your credentials? Edit the .env file with the correct values.</p>
-        """
+    try:
+        # Verify Reddit authentication on each request
+        auth_success, auth_message = verify_reddit_auth()
+        
+        # If authentication completely failed, show error page
+        if not auth_success:
+            return f"""
+            <h3>Reddit Authentication Failed</h3>
+            <p style="color: red;">{auth_message}</p>
+            <p>Please check your Reddit API credentials in the .env file.</p>
+            <p>Your current credentials:</p>
+            <ul>
+                <li>Client ID: {os.getenv('REDDIT_CLIENT_ID')[:5]}...</li>
+                <li>Username: {os.getenv('REDDIT_USERNAME')}</li>
+                <li>User Agent: {os.getenv('REDDIT_USER_AGENT')}</li>
+            </ul>
+            <p>Make sure:</p>
+            <ol>
+                <li>You've created a Reddit App at https://www.reddit.com/prefs/apps</li>
+                <li>You're using the correct client_id (the string under your app name)</li>
+                <li>You're using the correct client_secret</li>
+                <li>Your Reddit account password is correct</li>
+                <li>You're not being rate limited</li>
+            </ol>
+            <p>Need to update your credentials? Edit the .env file with the correct values.</p>
+            """
 
-    # If there are warnings (like low karma), show them as a flash message
-    if "Warning:" in auth_message:
-        flash(auth_message, 'warning')
+        # If there are warnings (like low karma), show them as a flash message
+        if "Warning:" in auth_message:
+            flash(auth_message, 'warning')
 
-    if not all([os.getenv('REDDIT_CLIENT_ID'), os.getenv('REDDIT_CLIENT_SECRET'), 
-                os.getenv('REDDIT_USERNAME'), os.getenv('REDDIT_PASSWORD')]):
-        setup_instructions = """
-        <h3>Setup Instructions:</h3>
-        <ol>
-            <li>Create a Reddit account if you don't have one</li>
-            <li>Go to https://www.reddit.com/prefs/apps</li>
-            <li>Click 'Create App' or 'Create Another App'</li>
-            <li>Fill in the details:
-                <ul>
-                    <li>Name: YourBotName</li>
-                    <li>Type: Script</li>
-                    <li>Description: Your bot description</li>
-                    <li>About URL: Can be blank</li>
-                    <li>Redirect URI: http://localhost:8080</li>
-                </ul>
-            </li>
-            <li>Create a .env file in the project root with:
-                <pre>
+        if not all([os.getenv('REDDIT_CLIENT_ID'), os.getenv('REDDIT_CLIENT_SECRET'), 
+                    os.getenv('REDDIT_USERNAME'), os.getenv('REDDIT_PASSWORD')]):
+            setup_instructions = """
+            <h3>Setup Instructions:</h3>
+            <ol>
+                <li>Create a Reddit account if you don't have one</li>
+                <li>Go to https://www.reddit.com/prefs/apps</li>
+                <li>Click 'Create App' or 'Create Another App'</li>
+                <li>Fill in the details:
+                    <ul>
+                        <li>Name: YourBotName</li>
+                        <li>Type: Script</li>
+                        <li>Description: Your bot description</li>
+                        <li>About URL: Can be blank</li>
+                        <li>Redirect URI: http://localhost:8080</li>
+                    </ul>
+                </li>
+                <li>Create a .env file in the project root with:
+                    <pre>
 REDDIT_CLIENT_ID=your_client_id
 REDDIT_CLIENT_SECRET=your_client_secret
 REDDIT_USERNAME=your_reddit_username
 REDDIT_PASSWORD=your_reddit_password
 REDDIT_USER_AGENT=script:YourBotName:v1.0
-                </pre>
-            </li>
-            <li>Restart the application</li>
-        </ol>
-        """
-        return setup_instructions
+                    </pre>
+                </li>
+                <li>Restart the application</li>
+            </ol>
+            """
+            return setup_instructions
 
-    if request.method == 'POST':
-        try:
-            # Get form data safely
-            form_data = request.form.to_dict()
-            action = form_data.get('action')
+        if request.method == 'POST':
+            try:
+                # Get form data safely
+                form_data = request.form.to_dict()
+                action = form_data.get('action')
 
-            if not action:
-                raise ValueError("No action specified")
+                if not action:
+                    raise ValueError("No action specified")
 
-            # Validate required fields based on action
-            if action == 'post':
-                required_fields = ['subreddit', 'title', 'content']
-            elif action == 'comment':
-                required_fields = ['post_url', 'comment_text']
-            elif action == 'message':
-                required_fields = ['username', 'subject', 'message']
-            elif action == 'monitor':
-                required_fields = ['monitor_subreddit', 'keyword', 'duration']
-            else:
-                raise ValueError("Invalid action specified")
+                # Validate required fields based on action
+                if action == 'post':
+                    required_fields = ['subreddit', 'title', 'content']
+                elif action == 'comment':
+                    required_fields = ['post_url', 'comment_text']
+                elif action == 'message':
+                    required_fields = ['username', 'subject', 'message']
+                elif action == 'monitor':
+                    required_fields = ['monitor_subreddit', 'keyword', 'duration']
+                else:
+                    raise ValueError("Invalid action specified")
 
-            # Check for missing fields
-            missing_fields = [field for field in required_fields if not form_data.get(field)]
-            if missing_fields:
-                raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
+                # Check for missing fields
+                missing_fields = [field for field in required_fields if not form_data.get(field)]
+                if missing_fields:
+                    raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
 
-            # Process the action
-            if action == 'post':
-                post = make_post(
-                    form_data.get('subreddit', 'test'),
-                    form_data.get('title'),
-                    form_data.get('content')
-                )
-                if post:
-                    stats.posts += 1
+                # Process the action
+                if action == 'post':
+                    post = make_post(
+                        form_data.get('subreddit', 'test'),
+                        form_data.get('title'),
+                        form_data.get('content')
+                    )
+                    if post:
+                        stats.posts += 1
+                        stats.total_actions += 1
+                        add_action('post', form_data, 'success')
+                        flash(f'Post created successfully! URL: {post.url}', 'success')
+
+                elif action == 'comment':
+                    submission = reddit.submission(url=form_data.get('post_url'))
+                    comment = add_comment(submission, form_data.get('comment_text'))
+                    if comment:
+                        stats.comments += 1
+                        stats.total_actions += 1
+                        add_action('comment', form_data, 'success')
+                        flash('Comment added successfully!', 'success')
+
+                elif action == 'message':
+                    if send_message(
+                        form_data.get('username'),
+                        form_data.get('subject'),
+                        form_data.get('message')
+                    ):
+                        stats.messages += 1
+                        stats.total_actions += 1
+                        add_action('message', form_data, 'success')
+                        flash('Message sent successfully!', 'success')
+
+                elif action == 'monitor':
+                    duration = int(form_data.get('duration', 30))
+                    monitor_subreddit(
+                        form_data.get('monitor_subreddit'),
+                        form_data.get('keyword'),
+                        duration
+                    )
                     stats.total_actions += 1
-                    add_action('post', {
-                        'subreddit': form_data.get('subreddit'),
-                        'title': form_data.get('title'),
-                        'content': form_data.get('content'),
-                        'url': post.url
-                    }, 'success')
-                    flash(f'Post created successfully! URL: {post.url}', 'success')
+                    add_action('monitor', form_data, 'success')
+                    flash('Monitoring completed!', 'success')
 
-            elif action == 'comment':
-                submission = reddit.submission(url=form_data.get('post_url'))
-                comment = add_comment(submission, form_data.get('comment_text'))
-                if comment:
-                    stats.comments += 1
-                    stats.total_actions += 1
-                    add_action('comment', {
-                        'post_url': form_data.get('post_url'),
-                        'comment': form_data.get('comment_text')
-                    }, 'success')
-                    flash('Comment added successfully!', 'success')
+            except Exception as e:
+                error_message = str(e)
+                if 'received 403 HTTP response' in error_message:
+                    error_message = "Reddit rejected the request. Please check your credentials and permissions."
+                elif 'received 404 HTTP response' in error_message:
+                    error_message = "The requested resource was not found. Please check the URL or username."
+                elif 'NoneType' in error_message:
+                    error_message = "Failed to process the request. Please check your input and try again."
+                
+                flash(f'Error: {error_message}', 'danger')
+                if action:
+                    add_action(action, form_data, 'failed')
 
-            elif action == 'message':
-                if send_message(
-                    form_data.get('username'),
-                    form_data.get('subject'),
-                    form_data.get('message')
-                ):
-                    stats.messages += 1
-                    stats.total_actions += 1
-                    add_action('message', {
-                        'username': form_data.get('username'),
-                        'subject': form_data.get('subject'),
-                        'message': form_data.get('message')
-                    }, 'success')
-                    flash('Message sent successfully!', 'success')
-
-            elif action == 'monitor':
-                duration = int(form_data.get('duration', 30))
-                monitor_subreddit(
-                    form_data.get('monitor_subreddit'),
-                    form_data.get('keyword'),
-                    duration
-                )
-                stats.total_actions += 1
-                add_action('monitor', {
-                    'subreddit': form_data.get('monitor_subreddit'),
-                    'keyword': form_data.get('keyword'),
-                    'duration': duration
-                }, 'success')
-                flash('Monitoring completed!', 'success')
-
-            stats.save_stats()
-
-        except Exception as e:
-            error_message = str(e)
-            if 'received 403 HTTP response' in error_message:
-                error_message = "Reddit rejected the request. Please check your credentials and permissions."
-            elif 'received 404 HTTP response' in error_message:
-                error_message = "The requested resource was not found. Please check the URL or username."
-            elif 'NoneType' in error_message:
-                error_message = "Failed to process the request. Please check your input and try again."
-            
-            flash(f'Error: {error_message}', 'danger')
-            if action:
-                add_action(action, form_data, 'failed')
-                stats.save_stats()
-
-        return redirect(url_for('index'))
-            
-    return render_template('index.html', stats=stats)
+            return redirect(url_for('index'))
+                
+        return render_template('index.html', stats=stats)
+    except Exception as e:
+        print(f"Error in index route: {str(e)}")
+        return f"An error occurred: {str(e)}", 500
 
 def add_action(action_type, data, status):
     timestamp = datetime.now()  # Store as datetime object instead of string
