@@ -19,14 +19,38 @@ reddit = praw.Reddit(
     user_agent=os.getenv('REDDIT_USER_AGENT', 'script:RedditBot:v1.0'),  
     username=os.getenv('REDDIT_USERNAME'),     
     password=os.getenv('REDDIT_PASSWORD'),
-    check_for_async=False  # Add this to prevent async issues
+    check_for_async=False
 )
 
-# Verify authentication
-try:
-    reddit.user.me()
-except Exception as e:
-    print(f"Failed to authenticate with Reddit: {e}")
+def verify_reddit_auth():
+    try:
+        # Try to get the authenticated user
+        user = reddit.user.me()
+        if user is None:
+            return False, "Authentication failed. Please check your credentials."
+            
+        # Check if account is too new
+        created_utc = user.created_utc
+        account_age_days = (time.time() - created_utc) / (24 * 60 * 60)
+        if account_age_days < 3:  # Reddit often requires accounts to be at least 3 days old
+            return False, f"Account is too new (age: {int(account_age_days)} days). Reddit requires older accounts for some actions."
+            
+        # Check karma
+        if user.link_karma + user.comment_karma < 1:  # Most subreddits require some karma
+            return False, f"Account has insufficient karma (total: {user.link_karma + user.comment_karma}). Some actions may be restricted."
+            
+        return True, "Authentication successful"
+        
+    except Exception as e:
+        error_msg = str(e).lower()
+        if 'invalid_grant' in error_msg:
+            return False, "Invalid username or password. Please check your credentials."
+        elif 'invalid_client' in error_msg:
+            return False, "Invalid client_id or client_secret. Please check your Reddit API credentials."
+        elif 'rate' in error_msg:
+            return False, "Rate limited by Reddit. Please wait a few minutes and try again."
+        else:
+            return False, f"Authentication error: {str(e)}"
 
 class Stats:
     def __init__(self):
@@ -75,20 +99,29 @@ stats = Stats()
 @app.route('/', methods=['GET', 'POST'])
 def index():
     # Verify Reddit authentication on each request
-    try:
-        reddit.user.me()
-    except:
-        return """
+    auth_success, auth_message = verify_reddit_auth()
+    if not auth_success:
+        return f"""
         <h3>Reddit Authentication Failed</h3>
+        <p style="color: red;">{auth_message}</p>
         <p>Please check your Reddit API credentials in the .env file.</p>
-        <p>Make sure:</p>
+        <p>Your current credentials:</p>
         <ul>
-            <li>Your client_id and client_secret are correct</li>
-            <li>Your username and password are correct</li>
-            <li>Your account has enough karma to perform these actions</li>
-            <li>Your account email is verified</li>
-            <li>You're not being rate limited</li>
+            <li>Client ID: {os.getenv('REDDIT_CLIENT_ID')[:5]}...</li>
+            <li>Username: {os.getenv('REDDIT_USERNAME')}</li>
+            <li>User Agent: {os.getenv('REDDIT_USER_AGENT')}</li>
         </ul>
+        <p>Make sure:</p>
+        <ol>
+            <li>You've created a Reddit App at https://www.reddit.com/prefs/apps</li>
+            <li>You're using the correct client_id (the string under your app name)</li>
+            <li>You're using the correct client_secret</li>
+            <li>Your Reddit account password is correct</li>
+            <li>Your Reddit account is at least 3 days old</li>
+            <li>Your account has some karma</li>
+            <li>You're not being rate limited</li>
+        </ol>
+        <p>Need to update your credentials? Edit the .env file with the correct values.</p>
         """
 
     if not all([os.getenv('REDDIT_CLIENT_ID'), os.getenv('REDDIT_CLIENT_SECRET'), 
