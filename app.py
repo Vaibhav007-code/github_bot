@@ -29,15 +29,19 @@ def verify_reddit_auth():
         if user is None:
             return False, "Authentication failed. Please check your credentials."
             
-        # Check if account is too new
+        # Get account details
         created_utc = user.created_utc
         account_age_days = (time.time() - created_utc) / (24 * 60 * 60)
-        if account_age_days < 3:  # Reddit often requires accounts to be at least 3 days old
-            return False, f"Account is too new (age: {int(account_age_days)} days). Reddit requires older accounts for some actions."
+        total_karma = user.link_karma + user.comment_karma
+        
+        warnings = []
+        if account_age_days < 3:
+            warnings.append(f"Account is new (age: {int(account_age_days)} days). Some actions may be restricted.")
+        if total_karma < 1:
+            warnings.append(f"Account has low karma (total: {total_karma}). Some actions may be restricted.")
             
-        # Check karma
-        if user.link_karma + user.comment_karma < 1:  # Most subreddits require some karma
-            return False, f"Account has insufficient karma (total: {user.link_karma + user.comment_karma}). Some actions may be restricted."
+        if warnings:
+            return True, "Warning: " + " ".join(warnings)
             
         return True, "Authentication successful"
         
@@ -100,6 +104,8 @@ stats = Stats()
 def index():
     # Verify Reddit authentication on each request
     auth_success, auth_message = verify_reddit_auth()
+    
+    # If authentication completely failed, show error page
     if not auth_success:
         return f"""
         <h3>Reddit Authentication Failed</h3>
@@ -117,12 +123,14 @@ def index():
             <li>You're using the correct client_id (the string under your app name)</li>
             <li>You're using the correct client_secret</li>
             <li>Your Reddit account password is correct</li>
-            <li>Your Reddit account is at least 3 days old</li>
-            <li>Your account has some karma</li>
             <li>You're not being rate limited</li>
         </ol>
         <p>Need to update your credentials? Edit the .env file with the correct values.</p>
         """
+
+    # If there are warnings (like low karma), show them as a flash message
+    if "Warning:" in auth_message:
+        flash(auth_message, 'warning')
 
     if not all([os.getenv('REDDIT_CLIENT_ID'), os.getenv('REDDIT_CLIENT_SECRET'), 
                 os.getenv('REDDIT_USERNAME'), os.getenv('REDDIT_PASSWORD')]):
