@@ -353,29 +353,42 @@ def send_message(username, subject, message):
         # Clean the username (remove u/ if present)
         username = username.strip().replace('u/', '')
         
-        # Get the redditor instance
-        redditor = reddit.redditor(username)
+        print(f"Attempting to send message to {username}")
         
-        # Verify the user exists by checking their id
+        # Get the redditor instance
         try:
+            redditor = reddit.redditor(username)
+            # Force a request to check if user exists
+            print(f"Checking if user {username} exists...")
             redditor.id
-        except:
-            raise ValueError(f"User '{username}' not found")
+        except Exception as e:
+            print(f"Error checking user existence: {str(e)}")
+            if "404" in str(e):
+                raise ValueError(f"User '{username}' not found")
+            raise
             
-        # Send message using PRAW
-        redditor.message(
-            subject=subject.strip(),
-            message=message.strip()
-        )
-        return True
+        try:
+            print(f"Sending message to {username}...")
+            # Send message using PRAW
+            redditor.message(
+                subject=subject.strip(),
+                message=message.strip()
+            )
+            print(f"Message sent successfully to {username}")
+            return True
+        except Exception as e:
+            error_msg = str(e).lower()
+            print(f"Error sending message: {error_msg}")
+            if "forbidden" in error_msg:
+                raise ValueError(f"Unable to message u/{username}. They might have blocked messages or your account is too new.")
+            elif "invalid_grant" in error_msg:
+                raise ValueError("Reddit authentication failed. Please check your credentials.")
+            else:
+                raise ValueError(f"Failed to send message: {str(e)}")
+                
     except Exception as e:
-        print(f"Error sending message: {e}")
-        if "USER_DOESNT_EXIST" in str(e):
-            raise Exception(f"User '{username}' does not exist")
-        elif "NOT_WHITELISTED_BY_USER_MESSAGE" in str(e):
-            raise Exception(f"Unable to message u/{username}. They might have blocked messages or your account is too new.")
-        else:
-            raise Exception(f"Failed to send message: {str(e)}")
+        print(f"Send message error: {str(e)}")
+        raise ValueError(str(e))
 
 def monitor_subreddit(subreddit_name, keyword=None, duration=60):
     subreddit = reddit.subreddit(subreddit_name)
