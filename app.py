@@ -18,8 +18,15 @@ reddit = praw.Reddit(
     client_secret=os.getenv('REDDIT_CLIENT_SECRET'),      
     user_agent=os.getenv('REDDIT_USER_AGENT', 'script:RedditBot:v1.0'),  
     username=os.getenv('REDDIT_USERNAME'),     
-    password=os.getenv('REDDIT_PASSWORD')      
+    password=os.getenv('REDDIT_PASSWORD'),
+    check_for_async=False  # Add this to prevent async issues
 )
+
+# Verify authentication
+try:
+    reddit.user.me()
+except Exception as e:
+    print(f"Failed to authenticate with Reddit: {e}")
 
 class Stats:
     def __init__(self):
@@ -67,6 +74,23 @@ stats = Stats()
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    # Verify Reddit authentication on each request
+    try:
+        reddit.user.me()
+    except:
+        return """
+        <h3>Reddit Authentication Failed</h3>
+        <p>Please check your Reddit API credentials in the .env file.</p>
+        <p>Make sure:</p>
+        <ul>
+            <li>Your client_id and client_secret are correct</li>
+            <li>Your username and password are correct</li>
+            <li>Your account has enough karma to perform these actions</li>
+            <li>Your account email is verified</li>
+            <li>You're not being rate limited</li>
+        </ul>
+        """
+
     if not all([os.getenv('REDDIT_CLIENT_ID'), os.getenv('REDDIT_CLIENT_SECRET'), 
                 os.getenv('REDDIT_USERNAME'), os.getenv('REDDIT_PASSWORD')]):
         setup_instructions = """
@@ -239,24 +263,67 @@ def make_post(subreddit_name="test", title="", content=""):
     return post
 
 def add_comment(post, comment_text=""):
-    comment = post.reply(comment_text or "This is a test comment from blueBot!")
-    return comment
+    try:
+        if not comment_text:
+            raise ValueError("Comment text is required")
+            
+        # Try to get the submission first to verify it exists
+        try:
+            if isinstance(post, str):
+                # If post is a URL, get the submission
+                submission = reddit.submission(url=post)
+            else:
+                submission = post
+                
+            # Verify we can access the submission
+            submission.title
+        except:
+            raise ValueError("Invalid post URL or post not found")
+            
+        # Add the comment
+        comment = submission.reply(comment_text)
+        return comment
+    except Exception as e:
+        print(f"Error adding comment: {e}")
+        if "RATELIMIT" in str(e):
+            raise Exception("Rate limit exceeded. Please wait a few minutes before trying again.")
+        elif "THREAD_LOCKED" in str(e):
+            raise Exception("Cannot comment on this post as it is locked.")
+        else:
+            raise Exception(f"Failed to add comment: {str(e)}")
 
 def send_message(username, subject, message):
     try:
         # Validate inputs
         if not username or not subject or not message:
             raise ValueError("Username, subject, and message are required")
+        
+        # Clean the username (remove u/ if present)
+        username = username.strip().replace('u/', '')
+        
+        # Get the redditor instance
+        redditor = reddit.redditor(username)
+        
+        # Verify the user exists by checking their id
+        try:
+            redditor.id
+        except:
+            raise ValueError(f"User '{username}' not found")
             
         # Send message using PRAW
-        reddit.redditor(username).message(
+        redditor.message(
             subject=subject.strip(),
             message=message.strip()
         )
         return True
     except Exception as e:
         print(f"Error sending message: {e}")
-        raise Exception(f"Failed to send message: {str(e)}")
+        if "USER_DOESNT_EXIST" in str(e):
+            raise Exception(f"User '{username}' does not exist")
+        elif "NOT_WHITELISTED_BY_USER_MESSAGE" in str(e):
+            raise Exception(f"Unable to message u/{username}. They might have blocked messages or your account is too new.")
+        else:
+            raise Exception(f"Failed to send message: {str(e)}")
 
 def monitor_subreddit(subreddit_name, keyword=None, duration=60):
     subreddit = reddit.subreddit(subreddit_name)
