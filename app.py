@@ -164,97 +164,108 @@ REDDIT_USER_AGENT=script:YourBotName:v1.0
         return setup_instructions
 
     if request.method == 'POST':
-        action = request.form.get('action')
-        
         try:
+            # Get form data safely
+            form_data = request.form.to_dict()
+            action = form_data.get('action')
+
+            if not action:
+                raise ValueError("No action specified")
+
+            # Validate required fields based on action
             if action == 'post':
-                subreddit = request.form.get('subreddit', 'test')
-                title = request.form.get('title')
-                content = request.form.get('content')
-                
-                if not title or not content:
-                    raise ValueError("Title and content are required")
-                
-                post = make_post(subreddit, title, content)
+                required_fields = ['subreddit', 'title', 'content']
+            elif action == 'comment':
+                required_fields = ['post_url', 'comment_text']
+            elif action == 'message':
+                required_fields = ['username', 'subject', 'message']
+            elif action == 'monitor':
+                required_fields = ['monitor_subreddit', 'keyword', 'duration']
+            else:
+                raise ValueError("Invalid action specified")
+
+            # Check for missing fields
+            missing_fields = [field for field in required_fields if not form_data.get(field)]
+            if missing_fields:
+                raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
+
+            # Process the action
+            if action == 'post':
+                post = make_post(
+                    form_data.get('subreddit', 'test'),
+                    form_data.get('title'),
+                    form_data.get('content')
+                )
                 if post:
                     stats.posts += 1
                     stats.total_actions += 1
                     add_action('post', {
-                        'subreddit': subreddit,
-                        'title': title,
-                        'content': content,
+                        'subreddit': form_data.get('subreddit'),
+                        'title': form_data.get('title'),
+                        'content': form_data.get('content'),
                         'url': post.url
                     }, 'success')
                     flash(f'Post created successfully! URL: {post.url}', 'success')
-                
+
             elif action == 'comment':
-                post_url = request.form.get('post_url')
-                comment_text = request.form.get('comment_text')
-                
-                if not post_url or not comment_text:
-                    raise ValueError("Post URL and comment text are required")
-                
-                submission = reddit.submission(url=post_url)
-                comment = add_comment(submission, comment_text)
+                submission = reddit.submission(url=form_data.get('post_url'))
+                comment = add_comment(submission, form_data.get('comment_text'))
                 if comment:
                     stats.comments += 1
                     stats.total_actions += 1
                     add_action('comment', {
-                        'post_url': post_url,
-                        'comment': comment_text
+                        'post_url': form_data.get('post_url'),
+                        'comment': form_data.get('comment_text')
                     }, 'success')
                     flash('Comment added successfully!', 'success')
-                
+
             elif action == 'message':
-                username = request.form.get('username')
-                subject = request.form.get('subject')
-                message = request.form.get('message')
-                
-                if not username or not subject or not message:
-                    raise ValueError("Username, subject, and message are required")
-                
-                if send_message(username, subject, message):
+                if send_message(
+                    form_data.get('username'),
+                    form_data.get('subject'),
+                    form_data.get('message')
+                ):
                     stats.messages += 1
                     stats.total_actions += 1
                     add_action('message', {
-                        'to': username,
-                        'subject': subject,
-                        'message': message
+                        'to': form_data.get('username'),
+                        'subject': form_data.get('subject'),
+                        'message': form_data.get('message')
                     }, 'success')
                     flash('Message sent successfully!', 'success')
-                    
+
             elif action == 'monitor':
-                subreddit = request.form.get('monitor_subreddit')
-                keyword = request.form.get('keyword')
-                duration = request.form.get('duration')
-                
-                if not subreddit or not keyword or not duration:
-                    raise ValueError("Subreddit, keyword, and duration are required")
-                
-                duration = int(duration)
-                monitor_subreddit(subreddit, keyword, duration)
+                duration = int(form_data.get('duration', 30))
+                monitor_subreddit(
+                    form_data.get('monitor_subreddit'),
+                    form_data.get('keyword'),
+                    duration
+                )
                 stats.total_actions += 1
                 add_action('monitor', {
-                    'subreddit': subreddit,
-                    'keyword': keyword,
+                    'subreddit': form_data.get('monitor_subreddit'),
+                    'keyword': form_data.get('keyword'),
                     'duration': duration
                 }, 'success')
                 flash('Monitoring completed!', 'success')
-            
+
             stats.save_stats()
-            return redirect(url_for('index'))
-                
+
         except Exception as e:
             error_message = str(e)
             if 'received 403 HTTP response' in error_message:
                 error_message = "Reddit rejected the request. Please check your credentials and permissions."
             elif 'received 404 HTTP response' in error_message:
                 error_message = "The requested resource was not found. Please check the URL or username."
+            elif 'NoneType' in error_message:
+                error_message = "Failed to process the request. Please check your input and try again."
             
-            add_action(action, request.form, 'failed')
             flash(f'Error: {error_message}', 'danger')
-            stats.save_stats()
-            return redirect(url_for('index'))
+            if action:
+                add_action(action, form_data, 'failed')
+                stats.save_stats()
+
+        return redirect(url_for('index'))
             
     return render_template('index.html', stats=stats)
 
