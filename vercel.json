@@ -9,10 +9,16 @@
     "routes": [
         {
             "src": "/(.*)",
-            "dest": "vercel_app.py"
+            "dest": "/vercel_app.py"
         }
     ],
     "env": {
-        "PYTHONUNBUFFERED": "1"
+        "PYTHONUNBUFFERED": "1",
+        "PYTHON_VERSION": "3.9"
+    },
+    "git": {
+        "deploymentEnabled": {
+            "main": true
+        }
     }
 } 
