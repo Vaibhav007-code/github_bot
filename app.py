@@ -107,6 +107,9 @@ REDDIT_USER_AGENT=script:YourBotName:v1.0
                 title = request.form.get('title')
                 content = request.form.get('content')
                 
+                if not title or not content:
+                    raise ValueError("Title and content are required")
+                
                 post = make_post(subreddit, title, content)
                 if post:
                     stats.posts += 1
@@ -122,6 +125,9 @@ REDDIT_USER_AGENT=script:YourBotName:v1.0
             elif action == 'comment':
                 post_url = request.form.get('post_url')
                 comment_text = request.form.get('comment_text')
+                
+                if not post_url or not comment_text:
+                    raise ValueError("Post URL and comment text are required")
                 
                 submission = reddit.submission(url=post_url)
                 comment = add_comment(submission, comment_text)
@@ -139,6 +145,9 @@ REDDIT_USER_AGENT=script:YourBotName:v1.0
                 subject = request.form.get('subject')
                 message = request.form.get('message')
                 
+                if not username or not subject or not message:
+                    raise ValueError("Username, subject, and message are required")
+                
                 if send_message(username, subject, message):
                     stats.messages += 1
                     stats.total_actions += 1
@@ -152,8 +161,12 @@ REDDIT_USER_AGENT=script:YourBotName:v1.0
             elif action == 'monitor':
                 subreddit = request.form.get('monitor_subreddit')
                 keyword = request.form.get('keyword')
-                duration = int(request.form.get('duration', 30))
+                duration = request.form.get('duration')
                 
+                if not subreddit or not keyword or not duration:
+                    raise ValueError("Subreddit, keyword, and duration are required")
+                
+                duration = int(duration)
                 monitor_subreddit(subreddit, keyword, duration)
                 stats.total_actions += 1
                 add_action('monitor', {
@@ -167,8 +180,14 @@ REDDIT_USER_AGENT=script:YourBotName:v1.0
             return redirect(url_for('index'))
                 
         except Exception as e:
+            error_message = str(e)
+            if 'received 403 HTTP response' in error_message:
+                error_message = "Reddit rejected the request. Please check your credentials and permissions."
+            elif 'received 404 HTTP response' in error_message:
+                error_message = "The requested resource was not found. Please check the URL or username."
+            
             add_action(action, request.form, 'failed')
-            flash(f'Error: {str(e)}', 'error')
+            flash(f'Error: {error_message}', 'danger')
             stats.save_stats()
             return redirect(url_for('index'))
             
@@ -224,8 +243,20 @@ def add_comment(post, comment_text=""):
     return comment
 
 def send_message(username, subject, message):
-    reddit.redditor(username).message(subject, message)
-    return True
+    try:
+        # Validate inputs
+        if not username or not subject or not message:
+            raise ValueError("Username, subject, and message are required")
+            
+        # Send message using PRAW
+        reddit.redditor(username).message(
+            subject=subject.strip(),
+            message=message.strip()
+        )
+        return True
+    except Exception as e:
+        print(f"Error sending message: {e}")
+        raise Exception(f"Failed to send message: {str(e)}")
 
 def monitor_subreddit(subreddit_name, keyword=None, duration=60):
     subreddit = reddit.subreddit(subreddit_name)
