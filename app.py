@@ -294,27 +294,48 @@ def add_comment(post, comment_text=""):
         # Try to get the submission first to verify it exists
         try:
             if isinstance(post, str):
-                # If post is a URL, get the submission
-                submission = reddit.submission(url=post)
+                # Clean up the URL if needed
+                post_url = post.strip()
+                print(f"Getting submission from URL: {post_url}")
+                submission = reddit.submission(url=post_url)
             else:
                 submission = post
                 
             # Verify we can access the submission
-            submission.title
-        except:
-            raise ValueError("Invalid post URL or post not found")
+            print(f"Checking submission title: {submission.title}")
             
-        # Add the comment
-        comment = submission.reply(comment_text)
-        return comment
+            # Check if the post is locked or archived
+            if submission.locked:
+                raise ValueError("This post is locked and cannot be commented on")
+            if submission.archived:
+                raise ValueError("This post is archived and cannot be commented on")
+                
+            # Add the comment with retry logic
+            try:
+                print("Attempting to add comment...")
+                comment = submission.reply(comment_text)
+                print(f"Comment added successfully: {comment.permalink}")
+                return comment
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "ratelimit" in error_msg:
+                    raise ValueError("Rate limit exceeded. Please wait a few minutes before trying again.")
+                elif "thread_locked" in error_msg:
+                    raise ValueError("Cannot comment on this post as it is locked.")
+                else:
+                    raise ValueError(f"Failed to add comment: {str(e)}")
+        except Exception as e:
+            print(f"Error accessing submission: {str(e)}")
+            if "404" in str(e):
+                raise ValueError("Post not found. Please check the URL.")
+            elif "403" in str(e):
+                raise ValueError("Access denied. The subreddit might be private or quarantined.")
+            else:
+                raise ValueError(f"Error accessing post: {str(e)}")
+                
     except Exception as e:
-        print(f"Error adding comment: {e}")
-        if "RATELIMIT" in str(e):
-            raise Exception("Rate limit exceeded. Please wait a few minutes before trying again.")
-        elif "THREAD_LOCKED" in str(e):
-            raise Exception("Cannot comment on this post as it is locked.")
-        else:
-            raise Exception(f"Failed to add comment: {str(e)}")
+        print(f"Error in add_comment: {str(e)}")
+        raise ValueError(str(e))
 
 def send_message(username, subject, message):
     try:
@@ -327,38 +348,51 @@ def send_message(username, subject, message):
         
         print(f"Attempting to send message to {username}")
         
-        # Get the redditor instance
-        try:
-            redditor = reddit.redditor(username)
-            # Force a request to check if user exists
-            print(f"Checking if user {username} exists...")
-            redditor.id
-        except Exception as e:
-            print(f"Error checking user existence: {str(e)}")
-            if "404" in str(e):
-                raise ValueError(f"User '{username}' not found")
-            raise
+        # Get the redditor instance with retry logic
+        max_retries = 3
+        retry_count = 0
+        while retry_count < max_retries:
+            try:
+                redditor = reddit.redditor(username)
+                # Force a request to check if user exists
+                print(f"Checking if user {username} exists...")
+                redditor.id
+                break
+            except Exception as e:
+                retry_count += 1
+                if retry_count == max_retries:
+                    print(f"Error checking user existence after {max_retries} retries: {str(e)}")
+                    if "404" in str(e):
+                        raise ValueError(f"User '{username}' not found")
+                    raise
+                print(f"Retry {retry_count}/{max_retries} checking user existence")
+                time.sleep(1)  # Wait before retrying
             
-        try:
-            print(f"Sending message to {username}...")
-            # Send message using PRAW
-            redditor.message(
-                subject=subject.strip(),
-                message=message.strip()
-            )
-            print(f"Message sent successfully to {username}")
-            return True
-        except Exception as e:
-            error_msg = str(e).lower()
-            print(f"Error sending message: {error_msg}")
-            if "forbidden" in error_msg:
-                raise ValueError(f"Unable to message u/{username}. They might have blocked messages or your account is too new.")
-            elif "invalid_grant" in error_msg:
-                raise ValueError("Reddit authentication failed. Please check your credentials.")
-            elif "restricted_to_pm" in error_msg:
-                raise ValueError(f"Cannot send message to u/{username}. They don't accept direct messages.")
-            else:
-                raise ValueError(f"Failed to send message: {str(e)}")
+        # Send message using PRAW with retry logic
+        retry_count = 0
+        while retry_count < max_retries:
+            try:
+                redditor.message(
+                    subject=subject.strip(),
+                    message=message.strip()
+                )
+                print(f"Message sent successfully to {username}")
+                return True
+            except Exception as e:
+                retry_count += 1
+                if retry_count == max_retries:
+                    error_msg = str(e).lower()
+                    print(f"Error sending message after {max_retries} retries: {error_msg}")
+                    if "forbidden" in error_msg:
+                        raise ValueError(f"Unable to message u/{username}. They might have blocked messages or your account is too new.")
+                    elif "invalid_grant" in error_msg:
+                        raise ValueError("Reddit authentication failed. Please check your credentials.")
+                    elif "restricted_to_pm" in error_msg:
+                        raise ValueError(f"Cannot send message to u/{username}. They don't accept direct messages.")
+                    else:
+                        raise ValueError(f"Failed to send message: {str(e)}")
+                print(f"Retry {retry_count}/{max_retries} sending message")
+                time.sleep(1)  # Wait before retrying
                 
     except Exception as e:
         print(f"Send message error: {str(e)}")
