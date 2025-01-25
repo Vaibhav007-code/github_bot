@@ -160,25 +160,11 @@ REDDIT_USER_AGENT=script:YourBotName:v1.0
                 if not action:
                     raise ValueError("No action specified")
 
-                # Validate required fields based on action
-                if action == 'post':
-                    required_fields = ['subreddit', 'title', 'content']
-                elif action == 'comment':
-                    required_fields = ['post_url', 'comment_text']
-                elif action == 'message':
-                    required_fields = ['username', 'subject', 'message']
-                elif action == 'monitor':
-                    required_fields = ['monitor_subreddit', 'keyword', 'duration']
-                else:
-                    raise ValueError("Invalid action specified")
-
-                # Check for missing fields
-                missing_fields = [field for field in required_fields if not form_data.get(field)]
-                if missing_fields:
-                    raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
-
                 # Process the action
                 if action == 'post':
+                    if not all(form_data.get(field) for field in ['subreddit', 'title', 'content']):
+                        raise ValueError("Subreddit, title, and content are required for posts")
+                    
                     post = make_post(
                         form_data.get('subreddit', 'test'),
                         form_data.get('title'),
@@ -191,15 +177,30 @@ REDDIT_USER_AGENT=script:YourBotName:v1.0
                         flash(f'Post created successfully! URL: {post.url}', 'success')
 
                 elif action == 'comment':
-                    submission = reddit.submission(url=form_data.get('post_url'))
-                    comment = add_comment(submission, form_data.get('comment_text'))
+                    # Validate comment form data
+                    post_url = form_data.get('post_url')
+                    comment_text = form_data.get('comment_text')
+                    
+                    if not post_url or not comment_text:
+                        raise ValueError("Post URL and comment text are required")
+                    
+                    print(f"Adding comment to post: {post_url}")
+                    print(f"Comment text: {comment_text}")
+                    
+                    comment = add_comment(post_url, comment_text)
                     if comment:
                         stats.comments += 1
                         stats.total_actions += 1
-                        add_action('comment', form_data, 'success')
+                        add_action('comment', {
+                            'post_url': post_url,
+                            'comment': comment_text
+                        }, 'success')
                         flash('Comment added successfully!', 'success')
 
                 elif action == 'message':
+                    if not all(form_data.get(field) for field in ['username', 'subject', 'message']):
+                        raise ValueError("Username, subject, and message are required")
+                    
                     if send_message(
                         form_data.get('username'),
                         form_data.get('subject'),
@@ -207,10 +208,17 @@ REDDIT_USER_AGENT=script:YourBotName:v1.0
                     ):
                         stats.messages += 1
                         stats.total_actions += 1
-                        add_action('message', form_data, 'success')
+                        add_action('message', {
+                            'username': form_data.get('username'),
+                            'subject': form_data.get('subject'),
+                            'message': form_data.get('message')
+                        }, 'success')
                         flash('Message sent successfully!', 'success')
 
                 elif action == 'monitor':
+                    if not all(form_data.get(field) for field in ['monitor_subreddit', 'keyword']):
+                        raise ValueError("Subreddit and keyword are required for monitoring")
+                    
                     duration = int(form_data.get('duration', 30))
                     monitor_subreddit(
                         form_data.get('monitor_subreddit'),
@@ -218,11 +226,19 @@ REDDIT_USER_AGENT=script:YourBotName:v1.0
                         duration
                     )
                     stats.total_actions += 1
-                    add_action('monitor', form_data, 'success')
+                    add_action('monitor', {
+                        'subreddit': form_data.get('monitor_subreddit'),
+                        'keyword': form_data.get('keyword'),
+                        'duration': duration
+                    }, 'success')
                     flash('Monitoring completed!', 'success')
+                else:
+                    raise ValueError(f"Invalid action: {action}")
 
             except Exception as e:
                 error_message = str(e)
+                print(f"Error processing request: {error_message}")
+                
                 if 'received 403 HTTP response' in error_message:
                     error_message = "Reddit rejected the request. Please check your credentials and permissions."
                 elif 'received 404 HTTP response' in error_message:
